@@ -162,20 +162,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     email: string,
     password: string
   ): Promise<{ error: AuthError | null; profile: Profile | null }> => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Tempo limite atingido. Verifique sua conexão.")), 12000)
+      );
 
-    if (error) {
-      return { error, profile: null };
+      const result = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        timeout,
+      ]) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+
+      const { data, error } = result;
+
+      if (error) return { error, profile: null };
+
+      setSession(data.session);
+      setUser(data.user);
+      const fetchedProfile = await loadProfile(data.user?.id);
+      return { error: null, profile: fetchedProfile };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro de conexão. Tente novamente.";
+      return {
+        error: { message, name: "NetworkError", status: 0 } as unknown as AuthError,
+        profile: null,
+      };
     }
-
-    setSession(data.session);
-    setUser(data.user);
-    const fetchedProfile = await loadProfile(data.user?.id);
-
-    return { error: null, profile: fetchedProfile };
   };
 
   const signOut = async () => {
