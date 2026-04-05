@@ -62,7 +62,7 @@ const DashboardLayout = ({
     (href !== "/" && location.pathname.startsWith(href + "/"));
 
   return (
-    <div className="min-h-screen flex" style={{ background: "hsl(220,16%,96%)" }}>
+    <div className="min-h-screen flex items-stretch" style={{ background: "hsl(220,16%,96%)" }}>
       {/* ── Mobile overlay ─────────────────────────────── */}
       {sidebarOpen && (
         <div
@@ -77,11 +77,14 @@ const DashboardLayout = ({
       ══════════════════════════════════════════════════ */}
       <aside
         className={cn(
-          "fixed top-0 left-0 h-full z-40 flex flex-col lg:static lg:translate-x-0 transition-transform duration-300 ease-out",
+          "fixed top-0 left-0 z-40 flex flex-col lg:sticky lg:top-0 lg:translate-x-0 transition-transform duration-300 ease-out",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{
           width: 256,
+          height: "100vh",
+          minHeight: "100vh",
+          flexShrink: 0,
           background: "linear-gradient(180deg, hsl(222,38%,10%) 0%, hsl(220,34%,8%) 100%)",
           borderRight: "1px solid rgba(255,255,255,0.055)",
         }}
