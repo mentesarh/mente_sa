@@ -109,14 +109,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user?.id) {
-        await loadProfile(data.session.user.id);
+      try {
+        // Timeout de segurança: libera a tela em até 8s mesmo sem resposta
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
+        const sessionFetch = supabase.auth.getSession();
+
+        const result = await Promise.race([sessionFetch, timeout]);
+
+        if (cancelled) return;
+
+        if (result && "data" in result) {
+          const { data } = result;
+          setSession(data.session);
+          setUser(data.session?.user ?? null);
+          if (data.session?.user?.id) {
+            await loadProfile(data.session.user.id);
+          }
+        }
+      } catch {
+        // ignora erros de rede — a tela de login será exibida normalmente
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     };
 
     init();
@@ -135,7 +152,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (
