@@ -23,8 +23,10 @@ import ColaboradorRoutes from "./pages/colaborador/ColaboradorRoutes";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 min
-      retry: 1,
+      staleTime: 1000 * 60 * 5,   // 5 min — não refaz query se dados são recentes
+      gcTime: 1000 * 60 * 10,     // 10 min — mantém em cache após componente desmontar
+      retry: 1,                    // só 1 retry — evita loops de erro
+      refetchOnWindowFocus: false, // não refaz ao voltar para a aba
     },
   },
 });
