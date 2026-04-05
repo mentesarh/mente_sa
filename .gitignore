@@ -12,10 +12,21 @@ dist
 dist-ssr
 *.local
 
-# Environment variables
+# Environment variables — NUNCA commitar
 .env
 .env.local
 .env.production
+.env.staging
+.env.*.local
+
+# Scripts com credenciais sensíveis (usar apenas localmente)
+supabase/seed_admin_user.sql
+supabase/create-admin-user.sql
+supabase/create_admin_profile.sql
+supabase/SOLUCAO_DEFINITIVA.sql
+supabase/ATUALIZAR_ADMIN_METADATA.sql
+supabase/CORRIGIR_TUDO.sql
+supabase/CORRIGIR_RLS.sql
 
 # Editor directories and files
 .vscode/*

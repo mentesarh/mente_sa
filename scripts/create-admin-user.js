@@ -1,152 +1,106 @@
 /**
  * Script para criar usuário administrador no Supabase
- * 
  * Execute com: node scripts/create-admin-user.js
- * 
- * Requer: npm install @supabase/supabase-js dotenv
+ *
+ * CONFIGURAÇÃO OBRIGATÓRIA — crie .env na raiz com:
+ *
+ *   VITE_SUPABASE_URL=https://xxxx.supabase.co
+ *   SUPABASE_SERVICE_ROLE_KEY=eyJ...   ← Supabase → Project Settings → API → service_role
+ *   ADMIN_EMAIL=seu@email.com
+ *   ADMIN_PASSWORD=SuaSenhaForte123!
  */
 
 import { createClient } from '@supabase/supabase-js';
-import * as dotenv from 'dotenv';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Carregar variáveis de ambiente
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const envPath = join(__dirname, '..', '.env');
 
-try {
-  const envFile = readFileSync(envPath, 'utf-8');
-  const envVars = {};
-  
-  envFile.split('\n').forEach(line => {
-    const match = line.match(/^([^=]+)=(.*)$/);
-    if (match) {
-      const key = match[1].trim();
-      const value = match[2].trim().replace(/^["']|["']$/g, '');
-      envVars[key] = value;
+if (existsSync(envPath)) {
+  try {
+    for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+          process.env[key] = val;
+        }
+      }
     }
-  });
-  
-  process.env.VITE_SUPABASE_URL = envVars.VITE_SUPABASE_URL;
-  process.env.SUPABASE_SERVICE_ROLE_KEY = envVars.SUPABASE_SERVICE_ROLE_KEY || '***REMOVED***';
-} catch (error) {
-  console.log('⚠️  Arquivo .env não encontrado, usando variáveis de ambiente do sistema');
+  } catch {
+    console.log('⚠️  Não foi possível ler o arquivo .env');
+  }
 }
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://xomxdvouptsivduzlqyn.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '***REMOVED***';
+const supabaseUrl    = process.env.VITE_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const adminEmail     = process.env.ADMIN_EMAIL;
+const adminPassword  = process.env.ADMIN_PASSWORD;
 
-// Credenciais do usuário administrador
-const ADMIN_EMAIL = 'mentesa.rh@gmail.com';
-const ADMIN_PASSWORD = '***REMOVED***';
-const ADMIN_USER_TYPE = 'admin';
+if (!supabaseUrl || !serviceRoleKey || !adminEmail || !adminPassword) {
+  console.error('\n❌ Variáveis de ambiente ausentes. Configure o .env com:');
+  console.error('   VITE_SUPABASE_URL');
+  console.error('   SUPABASE_SERVICE_ROLE_KEY');
+  console.error('   ADMIN_EMAIL');
+  console.error('   ADMIN_PASSWORD\n');
+  process.exit(1);
+}
 
-// Criar cliente Supabase com Service Role Key (permite criar usuários)
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
 });
 
-async function createAdminUser() {
-  console.log('🚀 Iniciando criação do usuário administrador...\n');
-  console.log(`📧 Email: ${ADMIN_EMAIL}`);
-  console.log(`🔑 Tipo: ${ADMIN_USER_TYPE}\n`);
+async function main() {
+  console.log('\n🔐 Criando usuário master_admin...\n');
 
-  try {
-    // Verificar se o usuário já existe
-    const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
-    if (listError) {
-      console.error('❌ Erro ao listar usuários:', listError.message);
-      return;
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+  });
+
+  let userId = authData?.user?.id;
+
+  if (authError) {
+    if (authError.message?.includes('already registered')) {
+      console.log('⚠️  Usuário já existe. Buscando ID...');
+      const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+      userId = list?.users?.find(u => u.email === adminEmail)?.id;
+    } else {
+      console.error('❌ Erro ao criar usuário:', authError.message);
+      process.exit(1);
     }
+  }
 
-    const existingUser = existingUsers.users.find(user => user.email === ADMIN_EMAIL);
-    
-    if (existingUser) {
-      console.log('⚠️  Usuário já existe!');
-      console.log(`   ID: ${existingUser.id}`);
-      console.log(`   Email: ${existingUser.email}`);
-      console.log(`   Tipo atual: ${existingUser.user_metadata?.user_type || 'não definido'}\n`);
-      
-      // Atualizar metadata se necessário
-      if (existingUser.user_metadata?.user_type !== ADMIN_USER_TYPE) {
-        console.log('🔄 Atualizando tipo de usuário...');
-        const { data: updatedUser, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-          existingUser.id,
-          {
-            user_metadata: {
-              user_type: ADMIN_USER_TYPE
-            }
-          }
-        );
-
-        if (updateError) {
-          console.error('❌ Erro ao atualizar usuário:', updateError.message);
-          return;
-        }
-
-        console.log('✅ Tipo de usuário atualizado para "admin"');
-      } else {
-        console.log('✅ Usuário já está configurado como administrador');
-      }
-
-      // Atualizar senha se necessário
-      console.log('\n🔄 Atualizando senha...');
-      const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
-        existingUser.id,
-        {
-          password: ADMIN_PASSWORD
-        }
-      );
-
-      if (passwordError) {
-        console.error('❌ Erro ao atualizar senha:', passwordError.message);
-      } else {
-        console.log('✅ Senha atualizada com sucesso');
-      }
-
-      return;
-    }
-
-    // Criar novo usuário
-    console.log('📝 Criando novo usuário...');
-    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-      email_confirm: true, // Confirmar email automaticamente
-      user_metadata: {
-        user_type: ADMIN_USER_TYPE
-      }
-    });
-
-    if (createError) {
-      console.error('❌ Erro ao criar usuário:', createError.message);
-      return;
-    }
-
-    console.log('\n✅ Usuário administrador criado com sucesso!');
-    console.log(`   ID: ${newUser.user.id}`);
-    console.log(`   Email: ${newUser.user.email}`);
-    console.log(`   Tipo: ${newUser.user.user_metadata.user_type}`);
-    console.log(`   Email confirmado: ${newUser.user.email_confirmed_at ? 'Sim' : 'Não'}\n`);
-
-    console.log('🎉 Pronto! Você pode fazer login com:');
-    console.log(`   Email: ${ADMIN_EMAIL}`);
-    console.log(`   Senha: ${ADMIN_PASSWORD}\n`);
-
-  } catch (error) {
-    console.error('❌ Erro inesperado:', error.message);
+  if (!userId) {
+    console.error('❌ Não foi possível obter o ID do usuário.');
     process.exit(1);
   }
+
+  const { error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .upsert({
+      id: userId,
+      role: 'master_admin',
+      display_name: 'Master Admin',
+      email: adminEmail,
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+
+  if (profileError) {
+    console.error('❌ Erro ao criar profile:', profileError.message);
+    process.exit(1);
+  }
+
+  console.log('✅ master_admin configurado com sucesso!');
+  console.log(`   ID:    ${userId}`);
+  console.log(`   Email: ${adminEmail}\n`);
 }
 
-// Executar
-createAdminUser();
-
-
+main().catch(console.error);

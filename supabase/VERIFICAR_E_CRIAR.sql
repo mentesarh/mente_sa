@@ -71,7 +71,7 @@ CREATE POLICY "Admin can view all profiles"
 CREATE INDEX IF NOT EXISTS profiles_role_idx ON public.profiles (role);
 CREATE INDEX IF NOT EXISTS profiles_company_idx ON public.profiles (company_id);
 
--- PASSO 7: Criar profile para usuário admin existente (mentesa.rh@gmail.com)
+-- PASSO 7: Criar profile para usuário admin existente (SEU_EMAIL_ADMIN@exemplo.com)
 -- Este passo cria o profile se o usuário já existe mas não tem profile
 INSERT INTO public.profiles (id, role, display_name)
 SELECT 
@@ -79,7 +79,7 @@ SELECT
   'admin',
   'Administrador Mente Sã'
 FROM auth.users u
-WHERE u.email = 'mentesa.rh@gmail.com'
+WHERE u.email = 'SEU_EMAIL_ADMIN@exemplo.com'
   AND NOT EXISTS (
     SELECT 1 FROM public.profiles p WHERE p.id = u.id
   )
@@ -102,7 +102,7 @@ SELECT
   u.email
 FROM public.profiles p
 JOIN auth.users u ON u.id = p.id
-WHERE u.email = 'mentesa.rh@gmail.com';
+WHERE u.email = 'SEU_EMAIL_ADMIN@exemplo.com';
 
 -- ============================================
 -- Se tudo estiver OK, você verá:

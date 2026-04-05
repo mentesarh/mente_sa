@@ -154,7 +154,7 @@ CREATE TRIGGER trg_set_updated_at_settings
 -- Seed de configurações padrão
 INSERT INTO public.settings (key, value, description) VALUES
   ('system_name',              '"Mente Sã Connect"', 'Nome do sistema'),
-  ('support_email',            '"mentesa.rh@gmail.com"', 'E-mail de suporte'),
+  ('support_email',            '"admin@suaempresa.com"', 'E-mail de suporte — altere após o deploy'),
   ('session_default_duration', '50', 'Duração padrão das sessões em minutos')
 ON CONFLICT (key) DO NOTHING;
 

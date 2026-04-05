@@ -330,7 +330,7 @@ CREATE POLICY "Anyone can read settings"
 -- Inserir configurações padrão
 INSERT INTO public.settings (key, value, description) VALUES
   ('system_name', '"Mente Sã Connect"', 'Nome do sistema'),
-  ('support_email', '"mentesa.rh@gmail.com"', 'E-mail de suporte'),
+  ('support_email', '"SEU_EMAIL_ADMIN@exemplo.com"', 'E-mail de suporte'),
   ('session_default_duration', '50', 'Duração padrão das sessões em minutos')
 ON CONFLICT (key) DO NOTHING;
 
