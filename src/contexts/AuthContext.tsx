@@ -84,8 +84,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         );
 
         if (error || !data) {
-          setProfile(null);
-          setRole(null);
+          // Não limpa role/profile se já tínhamos um perfil válido antes —
+          // uma falha de rede transitória não deve deslogar o usuário.
+          // Só limpa se realmente não há nada em cache.
+          if (!profileCache.current.has(userId)) {
+            setProfile(null);
+            setRole(null);
+          }
           return null;
         }
 
@@ -95,8 +100,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setRole(p.role);
         return p;
       } catch {
-        setProfile(null);
-        setRole(null);
+        // Falha de rede/timeout — mantém estado anterior
+        if (!profileCache.current.has(userId)) {
+          setProfile(null);
+          setRole(null);
+        }
         return null;
       } finally {
         profileFetching.current.delete(userId);
