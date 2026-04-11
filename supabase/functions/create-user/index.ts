@@ -135,6 +135,9 @@ serve(async (req) => {
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro interno do servidor'
+    // Sempre retorna 200 para que o cliente possa ler o JSON de erro.
+    // O campo "success: false" indica falha; status 4xx faz o SDK lançar
+    // exceção antes de o frontend conseguir ler a mensagem real.
     return new Response(
       JSON.stringify({
         success: false,
@@ -142,7 +145,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: 200,
       },
     )
   }
