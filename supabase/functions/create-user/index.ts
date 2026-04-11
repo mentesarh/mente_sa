@@ -1,5 +1,5 @@
 // Edge Function: create-user
-// Cria usuário no Supabase Auth + profiles + profile_links
+// Cria usuário no Supabase Auth + profiles
 // Usa service_role (server-side only)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
@@ -10,10 +10,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+type UserRole = 'master_admin' | 'coordenacao' | 'empresa_rh' | 'psicologo' | 'colaborador'
+
 interface CreateUserRequest {
   email: string
   password?: string
-  role: 'admin' | 'empresa' | 'psicologo' | 'colaborador'
+  role: UserRole
   display_name: string
   company_id?: string
   psychologist_id?: string
@@ -45,27 +47,33 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
 
     if (authError || !user) {
-      throw new Error('Unauthorized')
+      throw new Error('Não autorizado: usuário não autenticado')
     }
 
-    // Verificar se o usuário é admin
+    // Verificar se o usuário tem permissão (master_admin ou coordenacao)
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    if (!profile || profile.role !== 'admin') {
-      throw new Error('Only admins can create users')
+    if (!profile || !['master_admin', 'coordenacao'].includes(profile.role)) {
+      throw new Error('Acesso negado: apenas administradores podem criar usuários')
     }
 
     // Parse request body
     const body: CreateUserRequest = await req.json()
-    const { email, password, role, display_name, company_id, psychologist_id, employee_id } = body
+    const { email, password, role, display_name, company_id } = body
 
     // Validar dados obrigatórios
     if (!email || !role || !display_name) {
-      throw new Error('Missing required fields: email, role, display_name')
+      throw new Error('Campos obrigatórios ausentes: email, role, display_name')
+    }
+
+    // Validar role
+    const validRoles: UserRole[] = ['master_admin', 'coordenacao', 'empresa_rh', 'psicologo', 'colaborador']
+    if (!validRoles.includes(role)) {
+      throw new Error(`Role inválido: ${role}. Valores aceitos: ${validRoles.join(', ')}`)
     }
 
     // Gerar senha se não foi fornecida
@@ -83,41 +91,32 @@ serve(async (req) => {
     })
 
     if (createError || !newUser.user) {
-      throw new Error(`Failed to create user: ${createError?.message}`)
+      throw new Error(`Falha ao criar usuário: ${createError?.message}`)
     }
 
     const userId = newUser.user.id
 
     // 2. Criar/atualizar profile
+    const profileData: Record<string, unknown> = {
+      id: userId,
+      role,
+      display_name,
+      email,
+    }
+
+    // Adicionar company_id apenas para empresa_rh
+    if (role === 'empresa_rh' && company_id) {
+      profileData.company_id = company_id
+    }
+
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .upsert({
-        id: userId,
-        role,
-        display_name,
-        company_id: role === 'empresa' ? company_id : null
-      })
+      .upsert(profileData)
 
     if (profileError) {
       // Tentar deletar o usuário se falhou criar profile
       await supabaseAdmin.auth.admin.deleteUser(userId)
-      throw new Error(`Failed to create profile: ${profileError.message}`)
-    }
-
-    // 3. Criar profile_links
-    const { error: linkError } = await supabaseAdmin
-      .from('profile_links')
-      .upsert({
-        user_id: userId,
-        company_id: company_id || null,
-        psychologist_id: psychologist_id || null,
-        employee_id: employee_id || null
-      })
-
-    if (linkError) {
-      // Tentar deletar se falhou
-      await supabaseAdmin.auth.admin.deleteUser(userId)
-      throw new Error(`Failed to create profile_link: ${linkError.message}`)
+      throw new Error(`Falha ao criar perfil: ${profileError.message}`)
     }
 
     // Retornar sucesso
@@ -127,7 +126,7 @@ serve(async (req) => {
         user_id: userId,
         email,
         password: password ? undefined : finalPassword, // Só retorna senha se foi gerada
-        message: 'User created successfully'
+        message: 'Usuário criado com sucesso'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -135,10 +134,11 @@ serve(async (req) => {
       },
     )
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro interno do servidor'
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message
+        error: message
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -157,5 +157,3 @@ function generateRandomPassword(): string {
   }
   return password
 }
-
-

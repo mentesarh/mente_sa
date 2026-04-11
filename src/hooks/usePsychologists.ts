@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { psychologistsApi, CreatePsychologistData, UpdatePsychologistData } from "@/data/psychologists";
 import { toast } from "sonner";
+import { withTimeout } from "@/lib/api-utils";
 
 const QUERY_KEY = ["psychologists"];
 
@@ -23,7 +24,8 @@ export const useCreatePsychologist = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreatePsychologistData) => psychologistsApi.create(data),
+    mutationFn: (data: CreatePsychologistData) =>
+      withTimeout(psychologistsApi.create(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Psicólogo criado com sucesso!");
@@ -38,7 +40,8 @@ export const useUpdatePsychologist = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: UpdatePsychologistData) => psychologistsApi.update(data),
+    mutationFn: (data: UpdatePsychologistData) =>
+      withTimeout(psychologistsApi.update(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Psicólogo atualizado com sucesso!");

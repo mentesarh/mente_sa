@@ -138,19 +138,25 @@ export default function UsuariosPage() {
       toast.error("E-mail e nome são obrigatórios.");
       return;
     }
-    const result = await createUser.mutateAsync({
-      email: newUser.email,
-      password: newUser.password || undefined,
-      role: newUser.role,
-      display_name: newUser.display_name,
-    });
-    if (result.success) {
-      if (result.password) {
-        toast.success(`Usuário criado! Senha gerada: ${result.password}`, { duration: 10000 });
+    try {
+      const result = await createUser.mutateAsync({
+        email: newUser.email,
+        password: newUser.password || undefined,
+        role: newUser.role,
+        display_name: newUser.display_name,
+      });
+      if (result.success) {
+        if (result.password) {
+          toast.success(`Usuário criado! Senha gerada: ${result.password}`, { duration: 10000 });
+        }
+        setCreateDialog(false);
+        setNewUser({ display_name: "", email: "", password: "", role: "colaborador" });
+        refetch();
+      } else {
+        toast.error(result.error || "Erro ao criar usuário");
       }
-      setCreateDialog(false);
-      setNewUser({ display_name: "", email: "", password: "", role: "colaborador" });
-      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar usuário");
     }
   };
 

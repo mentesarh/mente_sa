@@ -182,22 +182,27 @@ export default function ColaboradoresPage() {
       return;
     }
 
-    const result = await createUser.mutateAsync({
-      email: userFormData.email,
-      password: userFormData.password || undefined,
-      role: "colaborador",
-      display_name: userFormData.display_name,
-      employee_id: userDialog.employee?.id,
-      company_id: userDialog.employee?.company_id,
-    });
+    try {
+      const result = await createUser.mutateAsync({
+        email: userFormData.email,
+        password: userFormData.password || undefined,
+        role: "colaborador",
+        display_name: userFormData.display_name,
+        company_id: userDialog.employee?.company_id,
+      });
 
-    if (result.success) {
-      if (result.password) {
-        toast.success(`Usuário criado! Senha gerada: ${result.password}`, {
-          duration: 10000,
-        });
+      if (result.success) {
+        if (result.password) {
+          toast.success(`Usuário criado! Senha gerada: ${result.password}`, {
+            duration: 10000,
+          });
+        }
+        setUserDialog({ open: false, employee: null });
+      } else {
+        toast.error(result.error || "Erro ao criar usuário");
       }
-      setUserDialog({ open: false, employee: null });
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar usuário");
     }
   };
 

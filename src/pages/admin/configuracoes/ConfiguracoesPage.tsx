@@ -73,27 +73,29 @@ export default function ConfiguracoesPage() {
   const handleSaveGeneralSettings = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      await Promise.all([
-        upsertSetting.mutateAsync({
-          key: "system_name",
-          value: generalSettings.system_name,
-          description: "Nome do sistema",
-        }),
-        upsertSetting.mutateAsync({
-          key: "support_email",
-          value: generalSettings.support_email,
-          description: "E-mail de suporte",
-        }),
-        upsertSetting.mutateAsync({
-          key: "session_default_duration",
-          value: parseInt(generalSettings.session_default_duration) || 50,
-          description: "Duração padrão das sessões em minutos",
-        }),
-      ]);
-    } catch (error) {
-      // Errors are handled by the mutation
+    const results = await Promise.allSettled([
+      upsertSetting.mutateAsync({
+        key: "system_name",
+        value: generalSettings.system_name,
+        description: "Nome do sistema",
+      }),
+      upsertSetting.mutateAsync({
+        key: "support_email",
+        value: generalSettings.support_email,
+        description: "E-mail de suporte",
+      }),
+      upsertSetting.mutateAsync({
+        key: "session_default_duration",
+        value: parseInt(generalSettings.session_default_duration) || 50,
+        description: "Duração padrão das sessões em minutos",
+      }),
+    ]);
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0 && failures.length < results.length) {
+      toast.warning("Algumas configurações não foram salvas. Tente novamente.");
     }
+    // Individual toasts already shown by each mutation's onSuccess/onError
   };
 
   const roleLabels: Record<string, string> = {

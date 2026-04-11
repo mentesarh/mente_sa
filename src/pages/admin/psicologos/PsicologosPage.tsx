@@ -167,21 +167,26 @@ export default function PsicologosPage() {
       return;
     }
 
-    const result = await createUser.mutateAsync({
-      email: userFormData.email,
-      password: userFormData.password || undefined,
-      role: "psicologo",
-      display_name: userFormData.display_name,
-      psychologist_id: userDialog.psychologist?.id,
-    });
+    try {
+      const result = await createUser.mutateAsync({
+        email: userFormData.email,
+        password: userFormData.password || undefined,
+        role: "psicologo",
+        display_name: userFormData.display_name,
+      });
 
-    if (result.success) {
-      if (result.password) {
-        toast.success(`Usuário criado! Senha gerada: ${result.password}`, {
-          duration: 10000,
-        });
+      if (result.success) {
+        if (result.password) {
+          toast.success(`Usuário criado! Senha gerada: ${result.password}`, {
+            duration: 10000,
+          });
+        }
+        setUserDialog({ open: false, psychologist: null });
+      } else {
+        toast.error(result.error || "Erro ao criar usuário");
       }
-      setUserDialog({ open: false, psychologist: null });
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar usuário");
     }
   };
 
