@@ -8,6 +8,7 @@ import {
   LockKeyhole, AtSign,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   getRoleBySlug,
@@ -38,6 +39,12 @@ const LoginFormPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [slowConnection, setSlowConnection] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
+
+  // Pré-aquece a conexão com o Supabase assim que a tela de login abre
+  // Isso reduz o cold start na hora que o usuário clicar em Entrar
+  useEffect(() => {
+    supabase.auth.getSession().catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const expectedRole: UserRole | null = getRoleBySlug(roleSlug ?? "");
 
@@ -87,10 +94,10 @@ const LoginFormPage = () => {
         return;
       }
       if (profile.role !== expectedRole) {
-        await signOut();
+        signOut(); // fire-and-forget — não bloqueia o usuário
         toast.error(
-          "Seu usuário não possui permissão para acessar este tipo de conta.",
-          { duration: 5000 }
+          `Este e-mail é cadastrado como "${getRoleLabel(profile.role)}". Acesse pelo portal correto.`,
+          { duration: 7000 }
         );
         return;
       }

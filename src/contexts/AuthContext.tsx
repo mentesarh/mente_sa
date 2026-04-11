@@ -31,6 +31,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ─── Helpers ─────────────────────────────────────────────────────────
+function raceTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser]       = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -40,43 +50,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Cache de profile por userId — evita chamadas duplicadas ao Supabase
   const profileCache = useRef<Map<string, Profile>>(new Map());
-  // Controla se o init já terminou — impede que onAuthStateChange
-  // rode loadProfile em duplicata na inicialização
+  // Deduplica fetchProfile concorrentes para o mesmo userId
+  const profileFetching = useRef<Map<string, Promise<Profile | null>>>(new Map());
+  // Impede que onAuthStateChange duplique o fetchProfile feito no init
   const initDone = useRef(false);
 
-  // ─── Busca profile com cache ──────────────────────────────
-  const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    // Cache hit — retorna sem chamar o Supabase
+  // ─── Busca profile com cache + deduplicação + timeout ────────────
+  const fetchProfile = (userId: string): Promise<Profile | null> => {
+    // 1. Cache hit
     if (profileCache.current.has(userId)) {
       const cached = profileCache.current.get(userId)!;
       setProfile(cached);
       setRole(cached.role);
-      return cached;
+      return Promise.resolve(cached);
     }
 
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, role, display_name, full_name, email, company_id, status, created_at, updated_at")
-        .eq("id", userId)
-        .single();
+    // 2. Já existe uma fetch em andamento para este userId — reutiliza
+    if (profileFetching.current.has(userId)) {
+      return profileFetching.current.get(userId)!;
+    }
 
-      if (error || !data) {
+    // 3. Nova fetch
+    const promise = (async (): Promise<Profile | null> => {
+      try {
+        const { data, error } = await raceTimeout(
+          supabase
+            .from("profiles")
+            .select("id, role, display_name, full_name, email, company_id, status, created_at, updated_at")
+            .eq("id", userId)
+            .single(),
+          25000, // 25s — DB pode ainda estar aquecendo após Auth responder
+          "Tempo limite ao buscar perfil de usuário."
+        );
+
+        if (error || !data) {
+          setProfile(null);
+          setRole(null);
+          return null;
+        }
+
+        const p = data as Profile;
+        profileCache.current.set(userId, p);
+        setProfile(p);
+        setRole(p.role);
+        return p;
+      } catch {
         setProfile(null);
         setRole(null);
         return null;
+      } finally {
+        profileFetching.current.delete(userId);
       }
+    })();
 
-      const p = data as Profile;
-      profileCache.current.set(userId, p);
-      setProfile(p);
-      setRole(p.role);
-      return p;
-    } catch {
-      setProfile(null);
-      setRole(null);
-      return null;
-    }
+    profileFetching.current.set(userId, promise);
+    return promise;
   };
 
   const clearProfile = () => {
@@ -90,11 +118,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const init = async () => {
       try {
-        // Timeout de 6s — se o Supabase não responder, libera a UI
         const { data } = await Promise.race([
           supabase.auth.getSession(),
           new Promise<{ data: { session: null } }>((resolve) =>
-            setTimeout(() => resolve({ data: { session: null } }), 6000)
+            setTimeout(() => resolve({ data: { session: null } }), 8000)
           ),
         ]);
 
@@ -106,7 +133,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await fetchProfile(data.session.user.id);
         }
       } catch {
-        // rede falhou — continua sem sessão
+        // rede falhou — libera a UI sem sessão
       } finally {
         if (!cancelled) {
           initDone.current = true;
@@ -117,23 +144,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     init();
 
-    // onAuthStateChange só age após o init terminar
-    // para não duplicar loadProfile na inicialização
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, nextSession) => {
+        // Durante o init, INITIAL_SESSION é tratado no init() — ignora aqui
         if (!initDone.current && event === "INITIAL_SESSION") return;
 
         setSession(nextSession);
         setUser(nextSession?.user ?? null);
 
         if (nextSession?.user?.id) {
-          // Na troca de sessão, invalida cache do usuário anterior se mudou
+          // Invalida cache se usuário mudou
           if (nextSession.user.id !== user?.id) {
             profileCache.current.delete(nextSession.user.id);
           }
+          // fetchProfile é deduplicado — não há dupla chamada ao DB
           await fetchProfile(nextSession.user.id);
         } else {
           profileCache.current.clear();
+          profileFetching.current.clear();
           clearProfile();
         }
 
@@ -150,20 +178,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── signIn ──────────────────────────────────────────────
+  // ─── signIn ──────────────────────────────────────────────────────
   const signIn = async (
     email: string,
     password: string
   ): Promise<{ error: AuthError | null; profile: Profile | null }> => {
     try {
-      // Timeout de 35s — o Supabase no plano gratuito pode levar até ~25s
-      // para acordar do cold start após período de inatividade
-      const result = await Promise.race([
+      // 40s — cobre cold start do Supabase free tier (~25-30s) + margem
+      const result = await raceTimeout(
         supabase.auth.signInWithPassword({ email, password }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Conexão lenta. Aguarde e tente novamente.")), 35000)
-        ),
-      ]) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+        40000,
+        "Servidor demorou para responder. Tente novamente em instantes."
+      ) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
 
       const { data, error } = result;
       if (error) return { error, profile: null };
@@ -172,29 +198,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(data.user);
 
       // Invalida cache para forçar fetch limpo após login
-      if (data.user?.id) profileCache.current.delete(data.user.id);
+      if (data.user?.id) {
+        profileCache.current.delete(data.user.id);
+        profileFetching.current.delete(data.user.id);
+      }
+
+      // fetchProfile é deduplicado — onAuthStateChange pode ter iniciado
+      // uma fetch; aqui reutilizamos a mesma promise se já estiver em voo
       const p = await fetchProfile(data.user?.id ?? "");
       return { error: null, profile: p };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erro de conexão. Tente novamente.";
-      return { error: { message, name: "NetworkError", status: 0 } as unknown as AuthError, profile: null };
+      return {
+        error: { message, name: "NetworkError", status: 0 } as unknown as AuthError,
+        profile: null,
+      };
     }
   };
 
-  // ─── signOut ─────────────────────────────────────────────
+  // ─── signOut ─────────────────────────────────────────────────────
   const signOut = async () => {
     profileCache.current.clear();
-    await supabase.auth.signOut();
+    profileFetching.current.clear();
+    // signOut não precisa esperar o servidor — limpa local imediatamente
+    supabase.auth.signOut().catch(() => {}); // fire-and-forget com segurança
     setUser(null);
     setSession(null);
     clearProfile();
   };
 
-  // ─── refreshProfile — força re-fetch ignorando cache ─────
+  // ─── refreshProfile — força re-fetch ignorando cache ─────────────
   const refreshProfile = async (): Promise<Profile | null> => {
     const uid = session?.user?.id;
     if (!uid) return null;
     profileCache.current.delete(uid);
+    profileFetching.current.delete(uid);
     return fetchProfile(uid);
   };
 
