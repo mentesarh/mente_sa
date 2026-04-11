@@ -156,10 +156,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string
   ): Promise<{ error: AuthError | null; profile: Profile | null }> => {
     try {
+      // Timeout de 35s — o Supabase no plano gratuito pode levar até ~25s
+      // para acordar do cold start após período de inatividade
       const result = await Promise.race([
         supabase.auth.signInWithPassword({ email, password }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Tempo limite atingido. Verifique sua conexão.")), 15000)
+          setTimeout(() => reject(new Error("Conexão lenta. Aguarde e tente novamente.")), 35000)
         ),
       ]) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
 

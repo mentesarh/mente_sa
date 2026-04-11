@@ -36,6 +36,7 @@ const LoginFormPage = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [slowConnection, setSlowConnection] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
 
   const expectedRole: UserRole | null = getRoleBySlug(roleSlug ?? "");
@@ -66,6 +67,9 @@ const LoginFormPage = () => {
       return;
     }
     setSubmitting(true);
+    setSlowConnection(false);
+    // Avisa o usuário se demorar mais de 8s (cold start do Supabase)
+    const slowTimer = setTimeout(() => setSlowConnection(true), 8000);
     try {
       const { error, profile } = await signIn(formData.email, formData.password);
       if (error) {
@@ -95,7 +99,9 @@ const LoginFormPage = () => {
     } catch {
       toast.error("Erro inesperado. Tente novamente.");
     } finally {
+      clearTimeout(slowTimer);
       setSubmitting(false);
+      setSlowConnection(false);
     }
   };
 
@@ -308,7 +314,7 @@ const LoginFormPage = () => {
                     <span
                       className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"
                     />
-                    Entrando...
+                    {slowConnection ? "Aguarde, conectando..." : "Entrando..."}
                   </span>
                 ) : (
                   "Entrar"
